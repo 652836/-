@@ -12,23 +12,18 @@
 - **数据切分**：按照时间顺序，将数据集按时间线性划分，前80%时间窗口作为训练集，后20%作为测试集，避免信息泄露。在训练集中，需要为每个用户构造流失“观察时间”和“是否流失”标签；测试集用于模型评估。  
 - **预处理步骤**：清洗重复或缺失记录，统一时间格式，去除异常值（如极端高消费）。对连续特征进行归一化或分箱处理，对类别特征（如兴趣标签）进行独热编码。在特征工程阶段，可生成**滑动窗口特征**（如最近30天购买次数）和**时序特征**（过去一个月/季度消费趋势）。  
 
-## 3. 建模方法与评估  
-- **Cox生存分析模型**：采用Cox比例风险模型来预测“流失时间”，适用于含删失数据的场景 ([Using Cox Regression to Model Customer Time to Churn](https://www.ibm.com/docs/en/spss-statistics/saas?topic=regression-using-cox-model-customer-time-churn#:~:text=As%20part%20of%20its%20efforts,are%20pulled%20from%20the%20database)) ([Understanding customer churn with survival analysis | Proove Intelligence](https://www.prooveintelligence.com/blog/understanding-customer-churn-with-survival-analysis/#:~:text=Survival%20analysis%20is%20perhaps%20more,a%20customer%20ending%20their%20subscription))。生存分析不仅可直接输出用户随时间的留存概率，还能处理训练集中当用户尚未流失（删失）样本。下图给出了一条Kaplan–Meier生存曲线示例：
-![image](https://github.com/user-attachments/assets/c314da6d-d810-4904-87f6-c1d88092d016)
+## 3. 建模方法与评估   
 
-*图1: 客户留存概率随时间的Kaplan–Meier生存曲线示例*  
-  生存曲线显示初期留存平缓，随时间逐渐下降，约5个月后有50%客户流失 ([Understanding customer churn with survival analysis | Proove Intelligence](https://www.prooveintelligence.com/blog/understanding-customer-churn-with-survival-analysis/#:~:text=We%20can%20clearly%20see%20that,continuing%20to%20past%20500%20days))。通过Cox模型可分析不同特征（如登录频率、消费额）对流失风险的影响，并估计任意时间点的存活概率 ([Using Cox Regression to Model Customer Time to Churn](https://www.ibm.com/docs/en/spss-statistics/saas?topic=regression-using-cox-model-customer-time-churn#:~:text=As%20part%20of%20its%20efforts,are%20pulled%20from%20the%20database)) ([Understanding customer churn with survival analysis | Proove Intelligence](https://www.prooveintelligence.com/blog/understanding-customer-churn-with-survival-analysis/#:~:text=Survival%20analysis%20is%20perhaps%20more,a%20customer%20ending%20their%20subscription))。模型输出包括风险比（Hazard Ratio）与生存曲线，帮助确定流失的关键时刻。  
-- **其他机器学习模型**：同时构建多种分类/回归模型比较效果：  
+- **机器学习模型**：同时构建多种分类模型比较效果：  
   - **决策树/随机森林**：易解释，对特征重要性敏感，可处理高维混合特征，但易过拟合。适合初期基准模型。  
   - **XGBoost**：梯度提升树，强大的泛化能力和非线性拟合能力，常用于二分类预测，可通过特征重要性解释结果。  
-  - **简单神经网络**：多层感知机等深度学习模型，能捕捉复杂非线性关系，但需大数据量且对超参较敏感。  
-- **评价指标**：选用多种指标评估模型效果：  
-  - **ROC-AUC**（曲线下面积）：衡量模型区分流失/未流失的整体能力，值越接近1越好 ([Building a Churn Prediction Model (Theoratical Guide) | by Amit Yadav | Biased-Algorithms | Medium](https://medium.com/biased-algorithms/building-a-churn-prediction-model-e8558add21a4#:~:text=The%20ROC,churners%20across%20all%20possible%20thresholds))。  
+  - **简单神经网络**：多层感知机等深度学习模型，能捕捉复杂非线性关系，但需大数据量且对超参较敏感。
+  - **LightGBM**:高效的梯度提升框架，在大规模数据集上的训练速度比其他梯度提升框架快得多，且具有良好的准确性和泛化能力，但在小样本数据上可能会出现过拟合的情况。
+- **评价指标**：选用多种指标评估模型效果：   
   - **精确率（Precision）**：预测为流失用户中实际流失的比例，关注干预资源利用效率 ([Building a Churn Prediction Model (Theoratical Guide) | by Amit Yadav | Biased-Algorithms | Medium](https://medium.com/biased-algorithms/building-a-churn-prediction-model-e8558add21a4#:~:text=,predicting))。  
   - **召回率（Recall）**：实际流失用户中被正确预测的比例，关注捕捉流失客户的能力 ([Building a Churn Prediction Model (Theoratical Guide) | by Amit Yadav | Biased-Algorithms | Medium](https://medium.com/biased-algorithms/building-a-churn-prediction-model-e8558add21a4#:~:text=,predicting))。  
   - **Recall@K**：对预测风险排序，关注前K高风险用户中实际流失用户的比例，常用于评估重点挽回效果 ([Precision and recall at K in ranking and recommendations](https://www.evidentlyai.com/ranking-metrics/precision-recall-at-k#:~:text=,within%20the%20top%20K%20positions)) ([Building a Churn Prediction Model (Theoratical Guide) | by Amit Yadav | Biased-Algorithms | Medium](https://medium.com/biased-algorithms/building-a-churn-prediction-model-e8558add21a4#:~:text=,predicting))。  
-  - **生存曲线**：对Cox模型可绘制各特征子组的预测生存曲线，以评估不同特征组合下的留存趋势。  
-  在评估时，应进行交叉验证和时间序列验证，确保模型鲁棒性。  
+  - **F1_score**: 精确率和召回率的调和平均，关注模型整体性能。 
 
 ## 4. RFM分析与流失风险  
 基于RFM（最近一次购买Recency、购买频次Frequency、消费金额Monetary）对用户进行分层，可挖掘不同价值群体的流失规律 ([IJIKM - A Novel Telecom Customer Churn Analysis System Based on RFM Model and Feature Importance Ranking](https://www.informingscience.org/Publications/5192#:~:text=Methodology%20The%20telecom%20customer%20churn,7%2C043%20instances%20and%2021%20features))。常见方法是将用户按R、F、M打分（如1–5分），或结合K-Means聚类进行自动分群。RFM分析可作为一种无监督分群手段，帮助构造额外特征或确定高价值用户群。如Xu等人在电信流失分析中，采用RFM模型与K-Means对用户分层后，再基于RFM特征构造预测变量，结合XGBoost等模型显著提升预测准确度 ([IJIKM - A Novel Telecom Customer Churn Analysis System Based on RFM Model and Feature Importance Ranking](https://www.informingscience.org/Publications/5192#:~:text=Methodology%20The%20telecom%20customer%20churn,7%2C043%20instances%20and%2021%20features))。  
