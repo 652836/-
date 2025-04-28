@@ -1,7 +1,7 @@
 # 用户流失预警体系
 
 ## 1. 业务问题定义  
-在电商场景下，用户流失通常定义为用户长时间未登录或活跃。本项目在这里规定“连续7天未登录即为流失”，并考虑动态定义：对于**高频用户**（例如每日活跃）缩短这一阈值，对**低频用户**（每周或每月购买）适当延长。例如，高价值客户若7天未来访则视为流失，而低价值客户可宽松到14天。明确问题后，需要在数据中标记**流失事件时间**（流失时点或是否流失）作为预测目标。在运营目标上，以降低整体流失率10%为基本目标，因此重点对高风险用户进行预警和干预。
+在电商场景下，用户流失通常定义为用户长时间未登录或活跃。本项目在这里规定“连续7天未登录即为流失”，并考虑动态定义：对于**高频用户**（例如每日活跃）缩短这一阈值，对**低频用户**（每周或每月购买）适当延长。在运营目标上，以降低整体流失率10%为基本目标，因此重点对高风险用户进行预警和干预。
 
 ## 2. 数据理解与处理  
 - **数据集来源**：使用“Kartikey Bartwal 电商推荐数据集”（Kaggle）作为样例。该数据集包含用户购买/浏览日志、商品分类等信息，可用于构造用户行为特征。  
@@ -9,8 +9,10 @@
   - **人口属性**：用户性别、年龄段、所在城市。  
   - **行为特征**：最近登录距离（天）、历史总购买次数、购买频次（单位时间内）、总支出金额、兴趣类别分布（购买或浏览过的商品分类）、页面浏览数、停留时间。  
   - **RFM特征**：最近一次购买距离、购买频次、总消费额，用于用户价值评估。  
-- **数据切分**：按照时间顺序，将数据集按时间线性划分，前80%时间窗口作为训练集，后20%作为测试集，避免信息泄露。在训练集中，需要为每个用户构造流失“观察时间”和“是否流失”标签；测试集用于模型评估。  
-- **预处理步骤**：清洗重复或缺失记录，统一时间格式，去除异常值（如极端高消费）。对连续特征进行归一化或分箱处理，对类别特征（如兴趣标签）进行独热编码。在特征工程阶段，可生成**滑动窗口特征**（如最近30天购买次数）和**时序特征**（过去一个月/季度消费趋势）。  
+- **数据切分**：按帕累托原则，对数据集进行划分，80%作为训练集，20%作为测试集，避免信息泄露，在训练集中，删除用于构造流失标签的字段'Last_Login_Days_Ago'。
+- **预处理步骤**：清洗重复或缺失记录，统一时间格式，去除异常值（如极端高消费）。对连续特征进行归一化或分箱处理，对类别特征（如兴趣标签）进行独热编码。  
+- **数据局限性**：这个数据集类似一种静态快照（Static Snapshot），只是保留了某一个时刻的具体数据，不足以支撑需要的时序分析和窗口滑动。仅有一个字段'Last_Login_Days_Ago'可以作为时间段构造，与目标变量流失的构造字段重合，可能会造成数据泄露，因为本分析采用常见分类模型（RandomForest、XGBoost、神经网络、LightGBM等）来拟合最为合适。此外，当前数据样本规模较小，且用户“流失/未流失”类别比例不平衡，数据量过少且类别不平衡会导致模型效果不佳​。为缓解这一问题，我对训练数据采用了过采样方法（如SMOTE）来生成少数类样本并平衡类别分布​imbalanced-learn.org。这样可使模型在训练时获得更多流失样本，从而减轻类别偏差的影响。（详细对比可见notebook）
+
 
 ## 3. 建模方法与评估   
 
@@ -28,7 +30,7 @@
 ## 4. RFM分析与流失风险  
 基于RFM（最近一次购买Recency、购买频次Frequency、消费金额Monetary）对用户进行分层，可挖掘不同价值群体的流失规律 ([IJIKM - A Novel Telecom Customer Churn Analysis System Based on RFM Model and Feature Importance Ranking](https://www.informingscience.org/Publications/5192#:~:text=Methodology%20The%20telecom%20customer%20churn,7%2C043%20instances%20and%2021%20features))。常见方法是将用户按R、F、M打分（如1–5分），或结合K-Means聚类进行自动分群。RFM分析可作为一种无监督分群手段，帮助构造额外特征或确定高价值用户群。如Xu等人在电信流失分析中，采用RFM模型与K-Means对用户分层后，再基于RFM特征构造预测变量，结合XGBoost等模型显著提升预测准确度 ([IJIKM - A Novel Telecom Customer Churn Analysis System Based on RFM Model and Feature Importance Ranking](https://www.informingscience.org/Publications/5192#:~:text=Methodology%20The%20telecom%20customer%20churn,7%2C043%20instances%20and%2021%20features))。  
 
-通过RFM分层后，可以**交叉分析各组流失率**：例如统计高价值用户组的历史流失比例与低价值组差异，或训练不同分层下的存活曲线。一般而言，R、F、M较高的用户价值高、流失风险相对较低；反之，则需要更多挽回关注。下表为基于RFM分层的用户特征和建议策略示例：  
+一般而言，R、F、M较高的用户价值高、流失风险相对较低；反之，则需要更多挽回关注。因此通过RFM分层后，基于分层结果定义流失情况：对于高价值客户若7天未来访则视为流失，而低价值客户宽松到14天。明确问题后，在数据中标记**流失事件**（是否流失）作为预测目标。这里基于下表为基于RFM分层的用户特征和建议策略：  
 
 | 用户分层 (RFM特征)        | 特征描述               | 流失风险 | 建议挽回策略       |
 |---------------------------|-----------------------|----------|------------------|
@@ -48,7 +50,9 @@
 
 上述策略需要结合业务渠道（邮件、推送、短信等）实施，并进行A/B测试评估效果。总体目标是通过**差异化关怀**提高挽回转化率，结合预测模型动态调整策略。  
 
-## 6. 报告输出与执行建议  
-本报告结构化了流失预警体系的构建流程：首先定义业务问题和流失标准，其次详述数据处理与特征工程方法，然后介绍建模思路（Cox生存模型及多种机器学习模型）和评估指标，并结合RFM分析深入探讨不同用户价值层次的流失风险。最后提出针对各类高风险用户的挽回策略。报告中关键信息用表格和流程性描述进行展示，便于技术和业务团队理解。项目执行时，可根据此方案依次进行数据预处理、特征构建、模型训练与验证，并结合业务需求持续迭代优化。  
 
-**参考文献**：文中引用了Cox回归应用于流失预测 ([Using Cox Regression to Model Customer Time to Churn](https://www.ibm.com/docs/en/spss-statistics/saas?topic=regression-using-cox-model-customer-time-churn#:~:text=As%20part%20of%20its%20efforts,are%20pulled%20from%20the%20database))、生存分析处理删失数据的优势 ([Understanding customer churn with survival analysis | Proove Intelligence](https://www.prooveintelligence.com/blog/understanding-customer-churn-with-survival-analysis/#:~:text=Survival%20analysis%20is%20perhaps%20more,a%20customer%20ending%20their%20subscription)) ([Understanding customer churn with survival analysis | Proove Intelligence](https://www.prooveintelligence.com/blog/understanding-customer-churn-with-survival-analysis/#:~:text=We%20can%20clearly%20see%20that,continuing%20to%20past%20500%20days))、RFM结合聚类用于流失建模的研究 ([IJIKM - A Novel Telecom Customer Churn Analysis System Based on RFM Model and Feature Importance Ranking](https://www.informingscience.org/Publications/5192#:~:text=Methodology%20The%20telecom%20customer%20churn,7%2C043%20instances%20and%2021%20features))，以及针对流失预防的个性化营销策略 ([Maximizing Customer Retention with Personalized Content Strategies](https://www.storyly.io/post/using-personalized-content-for-customer-retention-strategies-and-benefits#:~:text=match%20at%20L191%20personalized%20interactions%2C,stable%20and%20loyal%20customer%20base)) ([Increase Retention and Prevent Churn with Personalized Coupons | Twilio Segment](https://segment.com/recipes/voucherify-increase-retention-prevent-churn-coupons/#:~:text=effective%20personalized%20coupon%20campaign%20to,customer%20churn%20and%20increase%20retention))等资料，以增强方法论的科学依据。
+## 6.结果分析
+在当前数据和特征条件下，各模型在测试集上的**整体准确率约为60%**左右。值得注意的是，对“未流失”这一多数类的预测准确率也相对较低。
+出现这种现象可能有多方面原因：首先，数据量太小且特征不足，难以捕捉复杂的离职模式​。其次，不平衡的数据加剧了学习偏差，即使使用了SMOTE，模型仍可能倾向于多数类。最后，不同模型表现参差，一些复杂模型反而在少量样本上产生过拟合，简单模型则可能欠拟合。已有研究表明，训练数据过少和模型过复杂常导致过拟合，此时往往需要增大数据量或降低模型复杂度​。这些因素综合导致当前预测效果有限。
+
+
